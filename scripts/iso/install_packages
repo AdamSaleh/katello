@@ -1,0 +1,108 @@
+#!/usr/bin/python
+#
+# Install the katello packages from an ISO. This assumes that the
+# script exists in a directory which is a valid repo. It should have
+# a Packages and repository subdirectorties
+#
+# After this command is run, the user will need to run the
+# the katello-configure script in order to set up the installation.
+#
+# Copyright (c) 2012 Red Hat, Inc.
+#
+#
+import os
+import sys
+
+
+# Runs a command, and exits if hte command is not successful.
+# The output is returned.
+def run_command(cmd):
+    pipe = os.popen(cmd)
+    output = pipe.read()
+    return_code = pipe.close()
+    if (return_code) and (return_code <> 0):
+        sys.stderr.write("Error executing command: " + cmd)
+        #sys.stderr.write(output)
+        sys.exit(-1)
+
+    return output
+
+# Ensure we are root
+if os.getuid() != 0:
+    sys.stderr.write('Error: this command requires root access to execute\n')
+    sys.exit(8)
+
+# Figure out where we are running
+INSTALL_FILE = os.path.abspath(__file__)
+PWD = os.path.dirname(INSTALL_FILE)
+REPO_FILE="/etc/yum.repos.d/katello-local.repo"
+PACAKGES_DIR = os.path.join(PWD, "Packags")
+ISO_PACKAGE_DIR = os.path.join(PWD, "Packages")
+ISO_REPODATA_DIR = os.path.join(PWD, "repodata")
+INDENT = "   - "
+
+
+print "This script will install the katello packages on the current machine."
+print INDENT + "Ensuring we are in an expected directory."
+# Try to make sure we are in a sane directory
+if (not os.path.exists(ISO_PACKAGE_DIR)):
+    sys.stderr.write('Error: There is no Packages Directory\n')
+    sys.exit(-1)
+
+if (not os.path.exists(ISO_REPODATA_DIR)):
+    sys.stderr.write('Error: There is no repodata Directory\n')
+    sys.exit(-1)
+
+# Create a yum repository pointing to the current directory
+print INDENT + "Creating a Repository File"
+repo_file = open(REPO_FILE, 'w')
+s = []
+s.append('#')
+s.append('# Repository for the locally mounted katello repo')
+s.append('#')
+s.append('[katello-local]')
+s.append('name=katello-local')
+s.append('baseurl=file://%s' % PWD)
+s.append('enabled=1')
+s.append('gpgcheck=0')
+repo_file.write('\n'.join(s))
+repo_file.close()
+
+# Determine if we need to do install or update
+
+upgrade = False
+
+print INDENT + "Checking to see if Katello is already installed."
+if (run_command("rpm -qa katello-commonXXXX")):
+    upgrade = True
+
+if upgrade:
+    print INDENT + "Katello is already installed, running 'yum update'."
+    output = run_command("yum update")
+
+else:
+    # Determine if we need to install katello-all or Katello-headpin-all
+    katello_all = False
+    for f in os.listdir(ISO_PACKAGE_DIR):
+        if f.startswith('katello-all'):
+            katello_all = True
+    if (katello_all):
+        print INDENT + "katello-all is not yet installed, installing it."
+        run_command("yum install -y katello-all")
+    else:
+        print INDENT + "katello-headpin-all is not yet installed, installing it."
+        run_command("yum install -y katello-headpin-all")
+
+# Remove the repository file
+print INDENT + "Removing the repository file."
+os.remove(REPO_FILE)
+print
+
+
+# fini
+if (upgrade):
+    print "Upgrade is complete. Please backup your data and run katello-configure."
+else:
+    print "Install is complete. Please run katello-configure."
+
+
